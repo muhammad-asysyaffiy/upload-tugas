@@ -1,0 +1,62 @@
+body {
+    font-family: monospace;
+    background-color: #ffffff; 
+    color: #111827;
+    overflow-x: hidden;
+}
+
+.saas-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    font-size: 0.875rem;
+    color: #111827;
+    transition: all 0.2s ease;
+}
+
+.saas-input:focus {
+    outline: none;
+    border-color: #111827;
+    box-shadow: 0 0 0 1px #111827;
+}
+
+.saas-input::placeholder {
+    color: #9ca3af;
+}
+
+input[type="file"]::file-selector-button {
+    border: none;
+    background: #f3f4f6;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    color: #374151;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-right: 1rem;
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+input[type="file"]::file-selector-button:hover {
+    background: #e5e7eb;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.toast-anim {
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-overlay {
+    animation: fadeIn 0.2s ease-out forwards;
+}
