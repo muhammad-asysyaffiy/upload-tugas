@@ -2,11 +2,10 @@
 const SUPABASE_URL = 'https://kdjxzydrqtlbsdlngsyd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_Fm7laS5eWq4YN-m9LhhBTA_oMhEzawe';
 
-// Inisialisasi
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let isAppReady = false;
-let isAdmin = false;
+let currentUser = null; 
 let editingTaskId = null;
 let originalFileData = null;
 let globalTasks = [];
@@ -20,20 +19,25 @@ const btnCancelEdit = document.getElementById('btn-cancel-edit');
 const formTitle = document.getElementById('form-title');
 const editFileNote = document.getElementById('edit-file-note');
 
+const archiveLockedPrompt = document.getElementById('archive-locked-prompt');
+const archiveContentContainer = document.getElementById('archive-content-container');
+const taskCountBadge = document.getElementById('task-count-badge');
 const taskListEl = document.getElementById('task-list');
 const loadingEl = document.getElementById('loading-indicator');
 const emptyStateEl = document.getElementById('empty-state');
 const taskCountEl = document.getElementById('task-count');
+
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const roleBadge = document.getElementById('role-badge');
+const btnAuthToggle = document.getElementById('btn-auth-toggle');
 
-const btnAdminToggle = document.getElementById('btn-admin-toggle');
-const pinModal = document.getElementById('pin-modal');
-const pinBackdrop = document.getElementById('pin-backdrop');
-const inputPin = document.getElementById('input-pin');
-const btnPinSubmit = document.getElementById('btn-pin-submit');
-const btnPinCancel = document.getElementById('btn-pin-cancel');
+const authModal = document.getElementById('auth-modal');
+const inputEmail = document.getElementById('input-email');
+const inputPassword = document.getElementById('input-password');
+const btnLoginSubmit = document.getElementById('btn-login-submit');
+const btnRegisterSubmit = document.getElementById('btn-register-submit');
+const authLoading = document.getElementById('auth-loading');
 
 // Fitur Notifikasi
 function showToast(message, isError = false) {
@@ -47,7 +51,7 @@ function showToast(message, isError = false) {
     container.appendChild(toast);
     setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transform = 'translateY(10px)';
+        toast.style.transform = 'translateY(10px)'; 
         toast.style.transition = 'all 0.3s ease';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
@@ -63,7 +67,45 @@ function formatDate(dateString) {
     return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// Tampilkan Data
+// Update Tampilan Jika Login / Logout
+function updateUIAuth() {
+    const loginPrompt = document.getElementById('login-prompt');
+    const uploadForm = document.getElementById('upload-form');
+
+    if (currentUser) {
+        // Mode Login
+        btnAuthToggle.textContent = 'Logout';
+        roleBadge.textContent = 'MEMBER';
+        roleBadge.classList.replace('bg-blue-50/80', 'bg-green-50/80');
+        roleBadge.classList.replace('text-blue-600', 'text-green-600');
+        
+        loginPrompt.classList.add('hidden');
+        uploadForm.classList.remove('hidden');
+        
+        archiveLockedPrompt.classList.add('hidden');
+        archiveContentContainer.classList.remove('hidden');
+        taskCountBadge.classList.remove('hidden');
+        
+        renderTasks();
+    } else {
+        // Mode Guest
+        btnAuthToggle.textContent = 'Login';
+        roleBadge.textContent = 'GUEST (Belum Login)';
+        roleBadge.classList.replace('bg-green-50/80', 'bg-blue-50/80');
+        roleBadge.classList.replace('text-green-600', 'text-blue-600');
+        
+        loginPrompt.classList.remove('hidden');
+        uploadForm.classList.add('hidden');
+        
+        archiveLockedPrompt.classList.remove('hidden');
+        archiveContentContainer.classList.add('hidden');
+        taskCountBadge.classList.add('hidden');
+        
+        resetForm(); 
+    }
+}
+
+// Render Data
 function renderTasks() {
     loadingEl.classList.add('hidden');
     taskCountEl.textContent = globalTasks.length;
@@ -94,7 +136,7 @@ function renderTasks() {
         const badgeText = tipe === 'materi' ? 'MATERI' : 'TUGAS';
         const badgeHtml = `<span class="text-[10px] font-bold px-2 py-0.5 rounded border ${badgeColor} uppercase tracking-wider">${badgeText}</span>`;
 
-        const adminButtons = isAdmin ? `
+        const actionButtons = currentUser ? `
             <div class="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onclick="window.editTask('${task.id}')" class="p-1.5 bg-gray-100 text-gray-600 rounded-md hover:bg-blue-100 hover:text-blue-600 transition transform active:scale-90 duration-200" title="Edit">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
@@ -106,7 +148,7 @@ function renderTasks() {
         ` : '';
 
         card.innerHTML = `
-            ${adminButtons}
+            ${actionButtons}
             <div class="flex items-center gap-3 mb-4">
                 <div class="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700 shrink-0">
                     ${initials}
@@ -131,18 +173,16 @@ function renderTasks() {
     });
 }
 
-// Ambil Data dari Database
 async function fetchTasks() {
     const { data, error } = await supabaseClient
         .from('submissions')
         .select('*')
         .order('created_at', { ascending: false });
 
-    if (error) {
-        console.error("Gagal ambil data:", error);
-    } else {
+    if (!error) {
         globalTasks = data || [];
-        renderTasks();
+        // Hanya render jika user login
+        if (currentUser) renderTasks();
     }
 }
 
@@ -161,7 +201,8 @@ btnCancelEdit.addEventListener('click', resetForm);
 
 // Fitur Edit
 window.editTask = (id) => {
-    if (!isAdmin) return;
+    if (!currentUser) return showToast('Silakan login terlebih dahulu!', true);
+    
     const task = globalTasks.find(t => t.id == id);
     if (!task) return;
 
@@ -185,8 +226,8 @@ window.editTask = (id) => {
 
 // Fitur Hapus
 window.deleteTask = async (id) => {
-    if (!isAdmin) return;
-    if(!confirm("Yakin ingin menghapus dokumen ini?")) return;
+    if (!currentUser) return showToast('Silakan login terlebih dahulu!', true);
+    if (!confirm("Yakin ingin menghapus dokumen ini?")) return;
 
     try {
         const { error } = await supabaseClient.from('submissions').delete().eq('id', id);
@@ -200,50 +241,64 @@ window.deleteTask = async (id) => {
     }
 };
 
-// Tombol Login
-function closePinModal() {
-    pinModal.classList.add('hidden');
-    inputPin.value = '';
+// Fungsi Auth Modal
+window.openAuthModal = () => {
+    authModal.classList.remove('hidden');
+    inputEmail.focus();
 }
 
-btnAdminToggle.addEventListener('click', () => {
-    if (isAdmin) {
-        isAdmin = false;
-        roleBadge.classList.replace('bg-red-50', 'bg-blue-50');
-        roleBadge.classList.replace('text-red-600', 'text-blue-600');
-        roleBadge.classList.replace('border-red-100', 'border-blue-100');
-        roleBadge.textContent = 'USER';
-        btnAdminToggle.textContent = 'Login Admin';
-        resetForm();
-        renderTasks();
-        showToast('Keluar dari mode Admin');
+window.closeAuthModal = () => {
+    authModal.classList.add('hidden');
+    inputEmail.value = '';
+    inputPassword.value = '';
+    authLoading.classList.add('hidden');
+}
+
+btnAuthToggle.addEventListener('click', async () => {
+    if (currentUser) {
+        await supabaseClient.auth.signOut();
+        showToast('Berhasil Logout');
     } else {
-        pinModal.classList.remove('hidden');
-        setTimeout(() => inputPin.focus(), 100);
+        openAuthModal();
     }
 });
 
-btnPinCancel.addEventListener('click', closePinModal);
-pinBackdrop.addEventListener('click', closePinModal);
+btnRegisterSubmit.addEventListener('click', async () => {
+    const email = inputEmail.value.trim();
+    const password = inputPassword.value.trim();
+    if (!email || !password) return showToast('Isi Email dan Password!', true);
+    if (password.length < 6) return showToast('Password minimal 6 karakter!', true);
 
-btnPinSubmit.addEventListener('click', () => {
-    if (inputPin.value === '111213') { 
-        isAdmin = true;
-        roleBadge.classList.replace('bg-blue-50', 'bg-red-50');
-        roleBadge.classList.replace('text-blue-600', 'text-red-600');
-        roleBadge.classList.replace('border-blue-100', 'border-red-100');
-        roleBadge.textContent = 'Mode Admin';
-        btnAdminToggle.textContent = 'Logout Admin';
-        closePinModal();
-        renderTasks();
-        showToast('Berhasil login sebagai Admin');
+    authLoading.classList.remove('hidden');
+    const { error } = await supabaseClient.auth.signUp({ email, password });
+    authLoading.classList.add('hidden');
+    
+    if (error) {
+        showToast(error.message, true);
     } else {
-        showToast('PIN salah!', true);
-        inputPin.value = '';
+        showToast('Pendaftaran Berhasil! Anda sudah masuk.');
+        closeAuthModal();
     }
 });
 
-// Jalankan Web Saat Pertama Dibuka
+btnLoginSubmit.addEventListener('click', async () => {
+    const email = inputEmail.value.trim();
+    const password = inputPassword.value.trim();
+    if (!email || !password) return showToast('Isi Email dan Password!', true);
+
+    authLoading.classList.remove('hidden');
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    authLoading.classList.add('hidden');
+    
+    if (error) {
+        showToast("Login gagal! Cek kembali email/password", true);
+    } else {
+        showToast('Berhasil Login!');
+        closeAuthModal();
+    }
+});
+
+// Inisialisasi
 async function initApp() {
     try {
         const { error } = await supabaseClient.from('submissions').select('id').limit(1);
@@ -256,6 +311,15 @@ async function initApp() {
 
         fetchTasks();
 
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        currentUser = session?.user || null;
+        updateUIAuth();
+
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+            currentUser = session?.user || null;
+            updateUIAuth();
+        });
+
     } catch (error) {
         statusDot.classList.replace('bg-yellow-400', 'bg-red-500');
         statusText.textContent = 'System Offline';
@@ -266,7 +330,7 @@ async function initApp() {
 // Form Submit
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!isAppReady) return;
+    if (!isAppReady || !currentUser) return;
 
     const type = document.getElementById('input-tipe').value;
     const name = document.getElementById('input-nama').value.trim();
@@ -299,7 +363,6 @@ form.addEventListener('submit', async (e) => {
             const { error: dbError } = await supabaseClient.from('submissions').update(updateData).eq('id', editingTaskId);
             if (dbError) throw dbError;
             showToast('Data berhasil diperbarui!');
-            
         } else {
             const { error: dbError } = await supabaseClient.from('submissions').insert([{ type, name, nim, title, description, file_url }]);
             if (dbError) throw dbError;
